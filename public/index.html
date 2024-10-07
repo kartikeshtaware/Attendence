@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QR Attendance System</title>
+  <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
+  <script src="https://unpkg.com/html5-qrcode"></script>
+
+  <style>
+     body {
+      background-color: aquamarine;
+      display: flex;
+      justify-content: center; /* Horizontal centering */
+      align-items: center;     /* Vertical centering */
+      height: 100vh;           /* Full viewport height */
+      margin: 0;               /* Remove default margin */
+      /* border:5px solid black;
+      border-radius: 13%; */
+    }
+
+    #container {
+      text-align: center;      /* Center all text */
+      max-width: 600px;        /* Limit the width of the container */
+      padding: 20px;           /* Optional padding for spacing */
+      /* Optional background for better visibility */
+      border-radius: 10px;     /* Optional rounded corners */
+      box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1); /* Optional shadow for styling */
+    }
+
+    #uploadExcel,label {
+      color: brown;
+      margin: 5px 0; /* Add some space above and below the input */
+      margin-left: 20px;
+    }
+
+    h1 {
+      color: rgb(17, 19, 19);
+      margin-bottom: 20px; /* Add some space below the heading */
+      text-align: center;
+    }
+    
+    #my-qr-reader {
+      margin: 20px 0; /* Add space above and below the QR reader */
+      margin-left: 10px;
+    }
+    
+    button {
+      margin-top: 20px; /* Add space above the download button */
+    }
+  
+</style>
+
+</head>
+<body >
+  <div id="container">
+  <h1 style="color: rgb(17, 19, 19);">Attendance System</h1>
+  
+  <label>Upload Excel:</label>
+  <input type="file" id="uploadExcel" />
+  <br><br>
+
+  <div id="my-qr-reader" style="width: 350px; "></div>
+  <br>
+
+  <div>
+    <h3>Matching Substring:</h3>
+    <p id="substringDisplay">No QR code scanned yet.</p>
+  </div>
+
+  <button id="downloadExcel" style="display: none;">Download Updated Excel</button>
+</div>
+  <script>
+    let filePath; // To store the file path of the uploaded Excel
+    let lastResult = null;
+
+    // Handle Excel file upload
+    document.getElementById('uploadExcel').addEventListener('change', function(event) {
+      const file = event.target.files[0];
+      const formData = new FormData();
+      formData.append('file', file);
+
+      console.log("Uploading Excel file...");
+
+      fetch('/upload-excel', {
+        method: 'POST',
+        body: formData
+      })
+      .then(response => response.json())
+      .then(data => {
+        filePath = data.filePath; // Store file path for future reference
+        console.log('Excel file uploaded successfully!', data);
+        alert('Excel file uploaded successfully!');
+      })
+      .catch(err => {
+        console.error('Error uploading file:', err);
+        alert('Error uploading file.');
+      });
+    });
+
+    // Function to extract substring from QR code up to punctuation
+    function getSubstringUpToPunctuation(text) {
+      const periodIndex = text.indexOf('.');
+      const commaIndex = text.indexOf(',');
+      let endIndex = text.length;
+
+      if (periodIndex !== -1 && (commaIndex === -1 || periodIndex < commaIndex)) {
+        endIndex = periodIndex;
+      } else if (commaIndex !== -1 && (periodIndex === -1 || commaIndex < periodIndex)) {
+        endIndex = commaIndex;
+      }
+
+      return text.substring(0, endIndex).trim();
+    }
+
+    // Function to get today's date in 'YYYY-MM-DD' format
+    function getTodayDate() {
+      const today = new Date();
+      return today.toISOString().split('T')[0]; // 'YYYY-MM-DD' format
+    }
+
+    // QR Code Scanner Initialization
+    function onScanSuccess(decodeText) {
+      if (decodeText !== lastResult && filePath) {
+        lastResult = decodeText;
+
+        const extractedSubstring = getSubstringUpToPunctuation(decodeText);
+        document.getElementById('substringDisplay').innerText = `Substring for matching: ${extractedSubstring}`;
+
+        const attendanceDate = getTodayDate(); // Get the current date
+
+        console.log("Scanned QR code:", extractedSubstring, "on date:", attendanceDate);
+
+        // Send the extracted substring and today's date to the server for matching and updating
+        fetch('/update-excel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filePath, qrSubstring: extractedSubstring, attendanceDate }) // Send the date as well
+        })
+        .then(response => response.json())
+        .then(data => {
+          console.log("Received data from server:", data);
+
+          // Display an alert based on whether the text was matched or not
+          if (data.message && data.message.includes('Updated attendance')) {
+            alert(`Match found! Attendance updated successfully for: ${extractedSubstring} on ${attendanceDate}`);
+          } else if (data.message && data.message.includes('No match found')) {
+            alert('No match found for this QR code.');
+          } else {
+            alert('An error occurred while updating attendance.');
+          }
+
+          // If a download link is provided (when the file is updated), show the download button
+          if (data.downloadLink) {
+            document.getElementById('downloadExcel').style.display = 'block';
+            document.getElementById('downloadExcel').onclick = function () {
+              window.location.href = data.downloadLink;
+            };
+          }
+        })
+        .catch(err => {
+          console.error('Error updating Excel file:', err);
+          alert('An error occurred during the update process.');
+        });
+      }
+    }
+
+    // Initialize QR code scanner
+    var htmlscanner = new Html5QrcodeScanner("my-qr-reader", { fps: 10, qrbox: 250 });
+    htmlscanner.render(onScanSuccess);
+  </script>
+</body>
+</html>
