@@ -5,15 +5,15 @@ const path = require('path');
 const fs = require('fs');
 
 const app = express();
-app.use(express.json()); // To parse JSON bodies
+app.use(express.json());
 
-// Set up multer storage configuration with a fixed filename (e.g., attendance.xlsx)
+// Set up multer storage configuration
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, 'uploads/'); // Set the destination folder
+    cb(null, 'uploads/');
   },
   filename: (req, file, cb) => {
-    cb(null, 'attendance.xlsx'); // Always save as 'attendance.xlsx'
+    cb(null, 'attendance.xlsx');
   }
 });
 
@@ -22,9 +22,6 @@ const upload = multer({ storage });
 
 // Serve static files from the 'public' directory
 app.use(express.static('public'));
-
-// Global variable to store the file path of the uploaded file
-const uploadedFilePath = path.join(__dirname, 'uploads', 'attendance.xlsx');
 
 // Function to convert row and column index to Excel-style cell address
 function getExcelCellAddress(row, column) {
@@ -39,93 +36,90 @@ function getExcelCellAddress(row, column) {
   return columnName + row;
 }
 
+// Function to format date as YYYY-MM-DD
+function formatDate(date) {
+  const year = date.getFullYear();
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const day = date.getDate().toString().padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 // Route to upload Excel file
 app.post('/upload-excel', upload.single('file'), (req, res) => {
   try {
-    // Check if file was uploaded
     if (!req.file) {
       return res.status(400).json({ message: 'No file uploaded.' });
     }
 
-    // Reading the uploaded Excel file
-    const workbook = XLSX.readFile(uploadedFilePath);
-    const sheetName = workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[sheetName];
-    const sheetData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-
-    res.json({
-      message: 'File uploaded successfully',
-      sheetData, // Send the sheet data to the frontend
-      filePath: uploadedFilePath // Include the file path for later reference
-    });
+    const filePath = path.join(__dirname, 'uploads', req.file.originalname);
+    res.json({ message: 'File uploaded successfully', filePath });
   } catch (error) {
-    res.status(500).json({ message: 'Error reading Excel file.', error });
+    res.status(500).json({ message: 'Error uploading file.', error });
   }
 });
 
-// Route to update the same original Excel file based on QR code scan and date
+// Route to update the Excel file for the selected subject
 app.post('/update-excel', (req, res) => {
-  const { qrSubstring, attendanceDate } = req.body; // Expecting both date and substring
+  const { qrSubstring, attendanceDate, subject } = req.body;
+  const fileName = `${subject}.xlsx`; // Separate file for each subject
 
-  // Check if uploaded file path is valid
-  if (!uploadedFilePath || !fs.existsSync(uploadedFilePath)) {
-    return res.status(400).json({ message: 'No Excel file uploaded.' });
-  }
+  const uploadedFilePath = path.join(__dirname, 'uploads', fileName);
 
   try {
-    // Read the uploaded file again from its original path
+    if (!fs.existsSync(uploadedFilePath)) {
+      return res.status(400).json({ message: 'No Excel file for this subject uploaded.' });
+    }
+
     const workbook = XLSX.readFile(uploadedFilePath);
     const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-
-    // Convert sheet to array of arrays for easier processing
     const sheetData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
-    // Find the index of the date in the first row (header)
-    const dateRow = sheetData[0]; // First row with headers
-    const dateColumnIndex = dateRow.findIndex(date => date === attendanceDate); // Find the index of the specified date
+    const dateRow = sheetData[0];
+
+    // Convert Excel date cells to YYYY-MM-DD format for comparison
+    const formattedDateRow = dateRow.map(cell => {
+      if (cell instanceof Date) {
+        return formatDate(cell); // Format Date objects to 'YYYY-MM-DD'
+      }
+      return cell; // Return the value as-is if not a Date
+    });
+
+    const dateColumnIndex = formattedDateRow.findIndex(date => date === attendanceDate);
 
     if (dateColumnIndex === -1) {
       return res.status(404).json({ message: 'Date not found in the Excel sheet.' });
     }
 
     let matched = false;
-
-    // Find the row where the first column matches the QR substring (matching the name)
     for (let i = 1; i < sheetData.length; i++) {
-      const excelValue = sheetData[i][0]?.toString().trim().toLowerCase(); // Normalize Excel data
-      const qrValue = qrSubstring.toLowerCase(); // Normalize QR data for comparison
+      const excelValue = sheetData[i][0]?.toString().trim().toLowerCase();
+      const qrValue = qrSubstring.toLowerCase();
 
       if (excelValue && excelValue.startsWith(qrValue)) {
-        // Assuming the cell for attendance is in the found date column
-        const rowIndex = i + 1; // Row in Excel (1-based index)
-        const columnIndex = dateColumnIndex + 1; // Adjust for 1-based index in Excel
-
-        // Update the value with 'P' in the found date column
-        const cellAddress = getExcelCellAddress(rowIndex, columnIndex);
-        worksheet[cellAddress] = { v: 'P' }; // Mark attendance with 'P'
+        const cellAddress = getExcelCellAddress(i + 1, dateColumnIndex + 1);
+        worksheet[cellAddress] = { v: 'P' }; // Mark "P" in the correct cell
 
         matched = true;
         break;
       }
     }
 
-    if (!matched) {
-      return res.status(404).json({ message: 'No match found in the Excel sheet for the name.' });
+    if (matched) {
+      XLSX.writeFile(workbook, uploadedFilePath);
+
+      return res.json({
+        message: `Updated attendance for ${qrSubstring} on ${attendanceDate}`,
+        downloadLink: `/uploads/${fileName}`
+      });
+    } else {
+      return res.json({ message: 'No match found for QR code.' });
     }
-
-    // Save the updated Excel file (overwrite the original file)
-    XLSX.writeFile(workbook, uploadedFilePath);
-
-    res.json({
-      message: `Updated attendance for ${qrSubstring} on ${attendanceDate}`,
-      downloadLink: `/uploads/attendance.xlsx` // Return link for updated file
-    });
   } catch (error) {
-    res.status(500).json({ message: 'Error updating Excel file.', error });
+    res.status(500).json({ message: 'Error updating attendance.', error });
   }
 });
 
 // Start the server
 app.listen(3000, () => {
-  console.log('Server running on http://localhost:3000');
+  console.log('Server started on port 3000');
 });

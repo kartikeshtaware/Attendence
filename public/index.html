@@ -6,70 +6,149 @@
   <title>QR Attendance System</title>
   <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
   <script src="https://unpkg.com/html5-qrcode"></script>
-
+  
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
+  
   <style>
-     body {
-      background-color: aquamarine;
+    /* Base Styling */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: 'Poppins', sans-serif;
+      background: linear-gradient(135deg, #6e8efb, #a777e3);
+      margin: 0;
+      padding: 0;
       display: flex;
-      justify-content: center; /* Horizontal centering */
-      align-items: center;     /* Vertical centering */
-      height: 100vh;           /* Full viewport height */
-      margin: 0;               /* Remove default margin */
-      /* border:5px solid black;
-      border-radius: 13%; */
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      color: #333;
     }
 
     #container {
-      text-align: center;      /* Center all text */
-      max-width: 600px;        /* Limit the width of the container */
-      padding: 20px;           /* Optional padding for spacing */
-      /* Optional background for better visibility */
-      border-radius: 10px;     /* Optional rounded corners */
-      box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1); /* Optional shadow for styling */
+      background: #fff;
+      text-align: center;
+      max-width: 600px;
+      width: 90%;
+      padding: 40px;
+      border-radius: 15px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
+      transition: box-shadow 0.3s ease;
     }
 
-    #uploadExcel,label {
-      color: brown;
-      margin: 5px 0; /* Add some space above and below the input */
-      margin-left: 20px;
+    #container:hover {
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
     }
 
     h1 {
-      color: rgb(17, 19, 19);
-      margin-bottom: 20px; /* Add some space below the heading */
-      text-align: center;
+      font-size: 28px;
+      color: #4a4a4a;
+      margin-bottom: 30px;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      font-weight: 600;
     }
-    
-    #my-qr-reader {
-      margin: 20px 0; /* Add space above and below the QR reader */
-      margin-left: 10px;
+
+    label {
+      color: #666;
+      font-weight: 500;
+      display: block;
+      text-align: left;
+      margin: 15px 0 5px;
     }
-    
+
+    select, input[type="file"], button {
+      width: 100%;
+      padding: 12px;
+      margin: 10px 0;
+      border-radius: 8px;
+      border: 1px solid #ddd;
+      font-size: 16px;
+      transition: all 0.2s ease;
+    }
+
+    select:focus, input[type="file"]:focus, button:focus {
+      outline: none;
+      border-color: #6e8efb;
+    }
+
     button {
-      margin-top: 20px; /* Add space above the download button */
+      background: linear-gradient(135deg, #6e8efb, #a777e3);
+      color: white;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+      text-transform: uppercase;
+      box-shadow: 0 4px 20px rgba(110, 142, 251, 0.3);
+      transition: background 0.3s ease;
     }
-  
-</style>
 
+    button:hover {
+      background: linear-gradient(135deg, #a777e3, #6e8efb);
+    }
+
+    #my-qr-reader {
+      margin: 20px 0;
+      width: 100%;
+      border: 2px dashed #ddd;
+      padding: 20px;
+      border-radius: 10px;
+      background-color: #f7f7f7;
+    }
+
+    h3 {
+      margin-top: 30px;
+      color: #555;
+      font-weight: 600;
+    }
+
+    #substringDisplay {
+      margin-top: 20px;
+      font-size: 18px;
+      color: #333;
+    }
+
+    /* Mobile responsiveness */
+    @media (max-width: 600px) {
+      h1 {
+        font-size: 22px;
+      }
+      button {
+        font-size: 15px;
+      }
+    }
+  </style>
 </head>
-<body >
+<body>
   <div id="container">
-  <h1 style="color: rgb(17, 19, 19);">Attendance System</h1>
-  
-  <label>Upload Excel:</label>
-  <input type="file" id="uploadExcel" />
-  <br><br>
+    <h1>Attendance System</h1>
+    
+    <label for="subject">Select Subject:</label>
+    <select id="subject">
+      <option value="Python">Python</option>
+      <option value="TOC">Theory of Computation</option>
+      <option value="OS">Operating Systems</option>
+      <option value="DBMS">Database Management Systems</option>
+      <option value="SE">Software Engineering</option>
+    </select>
 
-  <div id="my-qr-reader" style="width: 350px; "></div>
-  <br>
+    <label for="uploadExcel">Upload Excel:</label>
+    <input type="file" id="uploadExcel" />
+    
+    <div id="my-qr-reader"></div>
 
-  <div>
-    <h3>Matching Substring:</h3>
-    <p id="substringDisplay">No QR code scanned yet.</p>
+    <div>
+      <h3>Matching Substring:</h3>
+      <p id="substringDisplay">No QR code scanned yet.</p>
+    </div>
+
+    <button id="downloadExcel" style="display: none;">Download Updated Excel</button>
   </div>
 
-  <button id="downloadExcel" style="display: none;">Download Updated Excel</button>
-</div>
   <script>
     let filePath; // To store the file path of the uploaded Excel
     let lastResult = null;
@@ -116,11 +195,13 @@
     // Function to get today's date in 'YYYY-MM-DD' format
     function getTodayDate() {
       const today = new Date();
-      return today.toISOString().split('T')[0]; // 'YYYY-MM-DD' format
+      return today.toISOString().split('T')[0];
     }
 
     // QR Code Scanner Initialization
     function onScanSuccess(decodeText) {
+      const selectedSubject = document.getElementById('subject').value;
+      
       if (decodeText !== lastResult && filePath) {
         lastResult = decodeText;
 
@@ -131,26 +212,26 @@
 
         console.log("Scanned QR code:", extractedSubstring, "on date:", attendanceDate);
 
-        // Send the extracted substring and today's date to the server for matching and updating
+        // Send the extracted substring, today's date, and subject to the server for matching and updating
         fetch('/update-excel', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ filePath, qrSubstring: extractedSubstring, attendanceDate }) // Send the date as well
+          body: JSON.stringify({ filePath, qrSubstring: extractedSubstring, attendanceDate, subject: selectedSubject }) // Send the date and subject as well
         })
         .then(response => response.json())
         .then(data => {
           console.log("Received data from server:", data);
 
-          // Display an alert based on whether the text was matched or not
           if (data.message && data.message.includes('Updated attendance')) {
-            alert(`Match found! Attendance updated successfully for: ${extractedSubstring} on ${attendanceDate}`);
+            alert(`Match found! Attendance updated successfully for: ${extractedSubstring} on ${attendanceDate} for ${selectedSubject}`);
           } else if (data.message && data.message.includes('No match found')) {
             alert('No match found for this QR code.');
+          } else if (data.message && data.message.includes('Teacher is not assigned')) {
+            alert('Teacher has not marked attendance. Cannot proceed.');
           } else {
             alert('An error occurred while updating attendance.');
           }
 
-          // If a download link is provided (when the file is updated), show the download button
           if (data.downloadLink) {
             document.getElementById('downloadExcel').style.display = 'block';
             document.getElementById('downloadExcel').onclick = function () {
