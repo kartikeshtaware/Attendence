@@ -52,7 +52,7 @@ app.post('/upload-excel', upload.single('file'), (req, res) => {
     }
 
     const filePath = path.join(__dirname, 'uploads', req.file.originalname);
-    res.json({ message: 'File uploaded successfully', filePath });
+    // res.json({ message: 'File uploaded successfully', filePath });
   } catch (error) {
     res.status(500).json({ message: 'Error uploading file.', error });
   }
